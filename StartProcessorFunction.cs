@@ -1,8 +1,6 @@
-using System;
 using System.Text;
 using System.Text.Json;
 using Azure;
-using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Azure.Functions.Worker;
@@ -11,20 +9,15 @@ using Microsoft.Extensions.Logging;
 
 namespace ssp_1;
 
-public class StartProcessorFunction
+public class StartProcessorFunction(IConfiguration config, ILogger<StartProcessorFunction> logger)
 {
-    private readonly ILogger<StartProcessorFunction> _logger;
-    private readonly IConfiguration _config;
-
-    public StartProcessorFunction(IConfiguration config, ILogger<StartProcessorFunction> logger)
-    {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _config = config ?? throw new ArgumentNullException(nameof(config));
-    }
+    private readonly ILogger<StartProcessorFunction> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IConfiguration _config = config ?? throw new ArgumentNullException(nameof(config));
+    private readonly HttpClient _httpClient = new();
 
     [Function("StartProcessor")]
     public async Task Run(
-        [QueueTrigger("%START_QUEUE_NAME%", Connection = "AzureWebJobsStorage")] QueueMessage message)
+    [QueueTrigger("%START_QUEUE_NAME%", Connection = "AzureWebJobsStorage")] QueueMessage message)
     {
         string storageConnectionString = _config["AzureWebJobsStorage"] ?? "";
         if (string.IsNullOrEmpty(storageConnectionString))
@@ -41,7 +34,7 @@ public class StartProcessorFunction
 
         _logger.LogInformation("Processing start message: {MessageId}", message.MessageId);
 
-        string processId = ParseProcessId(message) ?? "";
+        string? processId = ParseProcessId(message);
         if (string.IsNullOrEmpty(processId))
         {
             _logger.LogError("Invalid queue message content. MessageId: {MessageId}", message.MessageId);
@@ -50,15 +43,21 @@ public class StartProcessorFunction
 
         try
         {
-            _logger.LogInformation("Starting fan-out jobs for process {ProcessId}", processId);
+            _logger.LogInformation("Fetching Buienradar data for process {ProcessId}", processId);
+            BuienradarResponse? buienData = await FetchBuienradarDataAsync();
 
-            string queueName = _config["IMAGE_QUEUE_NAME"] ?? "image-queue";
-            QueueClient imageQueue = InitializeQueueClient(storageConnectionString, queueName);
+            if (buienData?.actual?.stationmeasurements == null || buienData.actual.stationmeasurements.Count == 0)
+            {
+                _logger.LogWarning("No station measurements found in Buienradar feed.");
+                return;
+            }
 
-            int totalStations = 1; // Could be dynamic if you fetch from the weather feed
-            await EnqueueStationJobsAsync(processId, totalStations, imageQueue);
+            int maxJobs = Math.Min(_config.GetValue<int>("MAX_STATIONS", 5), buienData.actual.stationmeasurements.Count);
+            QueueClient imageQueue = InitializeQueueClient(storageConnectionString, _config["IMAGE_QUEUE_NAME"] ?? "image-queue");
 
-            _logger.LogInformation("Enqueued {TotalStations} station jobs for process {ProcessId}", totalStations, processId);
+            await EnqueueStationJobsAsync(processId, buienData, maxJobs, imageQueue);
+
+            _logger.LogInformation("Enqueued {JobCount} station jobs for process {ProcessId}", maxJobs, processId);
         }
         catch (Exception ex)
         {
@@ -102,28 +101,79 @@ public class StartProcessorFunction
         }
     }
 
-    private async Task EnqueueStationJobsAsync(string processId, int totalStations, QueueClient queueClient)
+    private async Task<BuienradarResponse?> FetchBuienradarDataAsync()
     {
-        for (int i = 1; i <= totalStations; i++)
+        string apiUrl = _config["WEATHER_FEED_URL"] ?? "";
+        if (string.IsNullOrEmpty(apiUrl))
         {
+            _logger.LogError("WEATHER_FEED_URL is missing from configuration.");
+            return null;
+        }
+
+        HttpResponseMessage response = await _httpClient.GetAsync(apiUrl);
+        response.EnsureSuccessStatusCode();
+
+        string json = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<BuienradarResponse>(json);
+    }
+
+    private async Task EnqueueStationJobsAsync(string processId, BuienradarResponse buienData, int maxJobs, QueueClient queueClient)
+    {
+        for (int i = 0; i < maxJobs; i++)
+        {
+            StationMeasurement station = buienData.actual.stationmeasurements[i];
+
             string stationJobMessage = JsonSerializer.Serialize(new
             {
                 processId,
-                stationNumber = i
+                stationNumber = station.stationid,
+                stationName = station.stationname,
+                station.lat,
+                station.lon,
+                weatherDescription = station.weatherdescription,
+                station.temperature,
+                windSpeed = station.windspeed,
+                runningJobs = maxJobs
             });
 
-            byte[] messageBytes = Encoding.UTF8.GetBytes(stationJobMessage);
-            string base64Message = Convert.ToBase64String(messageBytes);
+            string base64Message = Convert.ToBase64String(Encoding.UTF8.GetBytes(stationJobMessage));
 
             try
             {
                 await queueClient.SendMessageAsync(base64Message);
-                _logger.LogInformation("Enqueued job for station {StationNumber} (process {ProcessId})", i, processId);
+                _logger.LogInformation("Enqueued job for station {StationId} ({StationName})", station.stationid, station.stationname);
             }
             catch (RequestFailedException ex)
             {
-                _logger.LogError(ex, "Failed to enqueue job for station {StationNumber} (process {ProcessId})", i, processId);
+                _logger.LogError(ex, "Failed to enqueue job for station {StationId} ({StationName})", station.stationid, station.stationname);
             }
         }
     }
+
+
+    private sealed class BuienradarResponse
+    {
+        public string id { get; set; } = default!;
+        public Actual actual { get; set; } = default!;
+    }
+
+    private sealed class Actual
+    {
+        public List<StationMeasurement> stationmeasurements { get; set; } = [];
+    }
+
+    private sealed class StationMeasurement
+    {
+        public int stationid { get; set; }
+        public string stationname { get; set; } = default!;
+        public double lat { get; set; }
+        public double lon { get; set; }
+        public string weatherdescription { get; set; } = default!;
+
+        public double temperature { get; set; }
+        public double windspeed { get; set; }
+
+
+    }
+
 }

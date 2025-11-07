@@ -10,17 +10,15 @@ public static class ImageHelper
 {
     public static Stream AddTextToImage(Stream imageStream, params (string text, (float x, float y) position, int fontSize, string colorHex)[] texts)
     {
-        MemoryStream memoryStream = new();
+        MemoryStream memoryStream = new MemoryStream();
 
-        Image image = Image.Load(imageStream);
+        using Image image = Image.Load(imageStream);
 
-        image.Clone(img =>
+        image.Mutate(img =>
         {
-            TextGraphicsOptions textGraphicsOptions = new()
+            TextGraphicsOptions textGraphicsOptions = new TextGraphicsOptions
             {
-                TextOptions = {
-                            WrapTextWidth = image.Width-10
-                    }
+                TextOptions = { WrapTextWidth = image.Width - 10 }
             };
 
             foreach (var (text, (x, y), fontSize, colorHex) in texts)
@@ -30,9 +28,9 @@ public static class ImageHelper
 
                 img.DrawText(textGraphicsOptions, text, font, color, new PointF(x, y));
             }
-        })
-            .SaveAsPng(memoryStream);
+        });
 
+        image.SaveAsPng(memoryStream);
         memoryStream.Position = 0;
 
         return memoryStream;

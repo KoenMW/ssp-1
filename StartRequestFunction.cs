@@ -1,8 +1,5 @@
-using System;
-using System.IO;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Queues;
@@ -46,10 +43,8 @@ public class StartRequestFunction
         {
             _logger.LogInformation("Received start request. Creating process {ProcessId}", processId);
 
-            // Step 1: Create metadata blob
             await UploadMetadataBlobAsync(processId);
 
-            // Step 2: Enqueue the start message
             bool queued = await EnqueueStartMessageAsync(processId);
             if (!queued)
             {
@@ -58,7 +53,6 @@ public class StartRequestFunction
                 return failureResponse;
             }
 
-            // Step 3: Build successful response
             HttpResponseData response = req.CreateResponse(System.Net.HttpStatusCode.Accepted);
             string baseUrl = req.Url.GetLeftPart(UriPartial.Authority);
             await response.WriteAsJsonAsync(new
@@ -125,7 +119,7 @@ public class StartRequestFunction
         {
             BlobClient blobClient = _metadataContainer.GetBlobClient(processId + ".json");
 
-            _logger.LogInformation($"Uploading metadata for processId={processId}");
+            _logger.LogInformation("Uploading metadata for processId={ProcessId}", processId);
 
 
             var metadata = new
@@ -133,8 +127,6 @@ public class StartRequestFunction
                 processId,
                 createdAt = DateTime.UtcNow,
                 status = "Queued",
-                expectedCount = 1,
-                stations = Array.Empty<object>()
             };
 
             string metadataJson = JsonSerializer.Serialize(metadata);

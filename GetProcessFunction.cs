@@ -1,7 +1,4 @@
-using System;
-using System.IO;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -108,7 +105,6 @@ public class GetProcessFunction(IConfiguration config, ILogger<GetProcessFunctio
         {
             BlobClient blobClient = client.GetBlobClient(blobName);
 
-            // Generate a read-only SAS token valid 1 hour
             BlobSasBuilder sasBuilder = new(BlobSasPermissions.Read, DateTimeOffset.UtcNow.AddHours(1))
             {
                 BlobContainerName = client.Name,
@@ -123,8 +119,9 @@ public class GetProcessFunction(IConfiguration config, ILogger<GetProcessFunctio
         {
             data.processId,
             data.createdAt,
-            data.status,
-            Images = imageLinks
+            status = (imageLinks.Count + data.errors.Length == data.totalJobs) ? "Finished" : "Processing",
+            images = imageLinks,
+            data.errors
         };
     }
 
@@ -141,8 +138,11 @@ public class GetProcessFunction(IConfiguration config, ILogger<GetProcessFunctio
     {
         public string processId { get; set; } = "";
         public DateTime? createdAt { get; set; } = null;
-        public string status { get; set; } = "";
         public string[] images { get; set; } = [];
+
+        public string[] errors { get; set; } = [];
+
+        public int totalJobs { get; set; } = 0;
     }
 }
 
