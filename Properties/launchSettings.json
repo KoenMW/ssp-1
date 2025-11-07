@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "ssp_1": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7093",
+      "launchBrowser": false
+    }
+  }
+}
