@@ -1,0 +1,3 @@
+### Start a new image generation process
+POST http://localhost:7093/api/start
+Accept: application/json

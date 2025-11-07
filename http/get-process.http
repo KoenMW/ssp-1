@@ -1,0 +1,3 @@
+### Get status of an existing process
+GET http://localhost:7093/api/process/{processId}
+Accept: application/json
