@@ -12,7 +12,7 @@ var storageName = toLower('${namePrefix}storage')
 var functionAppName = '${namePrefix}-funcapp'
 var planName = '${namePrefix}-plan'
 
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+resource storage 'Microsoft.Storage/storageAccounts@2022-09-01' = {
   name: storageName
   location: location
   sku: {
@@ -20,7 +20,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
   kind: 'StorageV2'
   properties: {
-    accessTier: 'Hot'
+    minimumTlsVersion: 'TLS1_2'
   }
 }
 
@@ -62,17 +62,18 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: hostingPlan.id
     siteConfig: {
       appSettings: [
-        { name: 'FUNCTIONS_WORKER_RUNTIME'; value: 'dotnet-isolated' }
-        { name: 'AzureWebJobsStorage'; value: storage.properties.primaryEndpoints.blob }
-        { name: 'WEATHER_FEED_URL'; value: 'https://data.buienradar.nl/2.0/feed/json' }
-        { name: 'IMAGE_FEED_URL'; value: 'https://api.unsplash.com/photos/random?query=weather&orientation=landscape' }
-        { name: 'UNSPLASH_ACCESS_KEY'; value: unsplashAccessKey }
-        { name: 'START_QUEUE_NAME'; value: 'start-queue' }
-        { name: 'IMAGE_QUEUE_NAME'; value: 'image-queue' }
-        { name: 'METADATA_CONTAINER'; value: 'metadata' }
-        { name: 'IMAGES_CONTAINER'; value: 'images' }
-        { name: 'MAX_STATIONS'; value: '3' }
+        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
+        { name: 'AzureWebJobsStorage', value: storage.properties.primaryEndpoints.blob }
+        { name: 'WEATHER_FEED_URL', value: 'https://data.buienradar.nl/2.0/feed/json' }
+        { name: 'IMAGE_FEED_URL', value: 'https://api.unsplash.com/photos/random?query=weather&orientation=landscape' }
+        { name: 'UNSPLASH_ACCESS_KEY', value: unsplashAccessKey }
+        { name: 'START_QUEUE_NAME', value: 'start-queue' }
+        { name: 'IMAGE_QUEUE_NAME', value: 'image-queue' }
+        { name: 'METADATA_CONTAINER', value: 'metadata' }
+        { name: 'IMAGES_CONTAINER', value: 'images' }
+        { name: 'MAX_STATIONS', value: '3' }
       ]
+
       linuxFxVersion: 'DOTNET-ISOLATED|8.0'
     }
     httpsOnly: true
